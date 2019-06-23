@@ -28,7 +28,7 @@
     },
     created: function () {
       var btnList = []
-      for (var index = 0; index < 50000; index++) {
+      for (var index = 0; index < 50; index++) {
         btnList.push({
           label: '按钮' + index
         })
