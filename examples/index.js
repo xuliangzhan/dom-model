@@ -13,9 +13,22 @@
         styles: {
           color: 'red'
         },
+        btnList: [
+          {
+            label: '按钮1'
+          },
+          {
+            label: '按钮2'
+          }
+        ],
         list: [
           {
-            age: 1
+            name: 'test1',
+            num: 1
+          },
+          {
+            name: 'test2',
+            num: 2
           }
         ]
       }
@@ -23,6 +36,18 @@
     render: function (h) {
       let $ = this.$
       return h('div', [
+        h('div', this.btnList.map(function (item) {
+          return h('button', {
+            domProps: {
+              innerText: item.label
+            },
+            events: {
+              click (evnt) {
+                debugger
+              }
+            }
+          })
+        })),
         h('input', {
           visible: $(this, 'show'),
           class: ['hhh', $(this, 'className'), {
@@ -45,7 +70,7 @@
           return h('input', {
             domProps: {
               type: 'text',
-              value: $(item, 'age')
+              value: $(item, 'name')
             },
             events: {
               input: function (evnt) {

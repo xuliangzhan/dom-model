@@ -26,13 +26,13 @@ function removeElementChild (elem) {
   elem.parentNode.removeChild(elem)
 }
 
-function objectAssign (self) {
+function objectAssign (origin) {
   arrayEach(arguments, (obj) => {
     objectEach(obj, (item, key) => {
-      self[key] = item
+      origin[key] = item
     })
   }, null, 1)
-  return self
+  return origin
 }
 
 function objectEach (obj, callback) {
@@ -186,41 +186,27 @@ function parseStyle (style) {
   return rest
 }
 
-class VMNode {
-  constructor (tagName, options = {}, children = [], context) {
-    if (arguments.length < 3) {
-      children = options
-      options = {}
+const vmHandle = {
+  init (vm) {
+    let { _el, _options, _tagName } = vm
+    if (!_el) {
+      vm._el = _el = document.createElement(_tagName)
     }
-    let _self = this
-    let _elem = document.createElement(tagName)
-
-    objectAssign(this, {
-      $el: _elem, // 节点元素
-      $context: context, // 上下文
-      $options: options, // 节点参数
-      $children: children // 占位元素
-    })
-
-    arrayEach(children, vm => {
-      vm.$parent = _self
-    })
-
-    if (isModelBinding(options.visible)) {
+    if (isModelBinding(_options.visible)) {
       let callback = () => {
-        if (this.visible) {
-          this.toVisible()
+        if (vm.visible) {
+          vm.toVisible()
         } else {
-          this.toHidden()
+          vm.toHidden()
         }
       }
-      dependence.listener(options.visible, callback)
+      dependence.listener(_options.visible, callback)
     }
 
-    let className = options.class
+    let className = _options.class
     if (className) {
       let callback = () => {
-        _elem.className = parseClassName(className).filter(cls => cls).join(' ')
+        _el.className = parseClassName(className).filter(cls => cls).join(' ')
       }
       if (isModelBinding(className)) {
         dependence.listener(className, callback)
@@ -229,10 +215,10 @@ class VMNode {
       watchClassName(className, callback)
     }
 
-    let style = options.style
+    let style = _options.style
     if (style) {
       let callback = () => {
-        objectAssign(_elem.style, parseStyle(style))
+        objectAssign(_el.style, parseStyle(style))
       }
       if (isModelBinding(style)) {
         dependence.listener(style, callback)
@@ -241,73 +227,112 @@ class VMNode {
       watchStyle(style, callback)
     }
 
-    objectEach(options.domProps, function (property, domKey) {
+    objectEach(_options.domProps, (property, domKey) => {
       if (property) {
         if (isModelBinding(property)) {
           dependence.listener(property, () => {
-            _elem[domKey] = property.value
+            _el[domKey] = property.value
           })
-          _elem[domKey] = property.value
+          _el[domKey] = property.value
         } else {
-          _elem[domKey] = property
+          _el[domKey] = property
         }
       }
     })
 
-    objectEach(options.events, function (callback, name) {
-      _elem.addEventListener(name, callback.bind(_self), false)
+    objectEach(_options.events, function (callback, name, obj) {
+      obj[name] = () => callback.apply(vm._context, arguments)
+      _el.addEventListener(name, obj[name], false)
+    })
+  },
+  destroy (vm) {
+    let { _el, _place, _options } = vm
+    objectEach(_options.events, (callback, name) => {
+      _el.removeEventListener(name, callback)
+    })
+    if (_el && _el.parentNode) {
+      _el.parentNode.removeChild(_el)
+    } else if (_place && _place.parentNode) {
+      _place.parentNode.removeChild(_place)
+    }
+  }
+}
+
+class VMNode {
+  constructor (tagName, options, children = []) {
+    if (isArray(options)) {
+      children = options
+      options = {}
+    } else {
+      options = Object.assign({}, options)
+    }
+
+    objectAssign(this, {
+      _el: null,
+      _tagName: tagName,
+      _options: options,
+      _children: children,
+      _place: null,
+      _context: null
+    })
+
+    arrayEach(children, vm => {
+      vm._parent = this
     })
   }
   get visible () {
-    let visible = this.$options.visible
+    let { visible } = this._options
     return visible || isBoolean(visible) ? isModelBinding(visible) ? visible.value : visible : true
   }
   get isMount () {
-    return this.$el && this.$el.parentNode
+    return this._el && this._el.parentNode
   }
-  mount () {
-    if (this.visible) {
+  mount (context) {
+    let { visible, _children } = this
+    this._context = context
+    if (visible) {
+      vmHandle.init(this)
       this.toVisible()
-      arrayEach(this.$children, node => node.mount())
+      arrayEach(_children, node => node.mount(context))
     } else {
       this.toHidden()
     }
   }
+  unmount () {
+    this._children.forEach(vm => vm.unmount())
+    vmHandle.destroy(this)
+  }
   toVisible () {
-    let { $el, $place, $parent, isMount } = this
-    let parentElem = $parent ? $parent.$el : null
+    let { _el, _place, _parent, isMount } = this
+    let parentElem = _parent ? _parent._el : null
     if (!isMount && parentElem) {
-      if ($place) {
-        parentElem.insertBefore($el, $place)
-        removeElementChild($place)
+      if (_place) {
+        parentElem.insertBefore(_el, _place)
+        removeElementChild(_place)
       } else {
-        parentElem.appendChild($el)
+        parentElem.appendChild(_el)
       }
     }
   }
   toHidden () {
-    let { $el, $place, $parent, isMount } = this
-    let parentElem = $parent ? $parent.$el : null
+    let { _el, _place, _parent, isMount } = this
+    let parentElem = _parent ? _parent._el : null
     if (parentElem) {
-      if (!$place) {
-        this.$place = $place = document.createComment('')
+      if (!_place) {
+        this._place = _place = document.createComment('')
       }
       if (isMount) {
-        parentElem.insertBefore($place, $el)
-        removeElementChild($el)
+        parentElem.insertBefore(_place, _el)
+        removeElementChild(_el)
       } else {
-        parentElem.appendChild($place)
+        parentElem.appendChild(_place)
       }
     }
   }
 }
 
-function createVMNode (tagName, options = {}, children = []) {
-  if (arguments.length < 3) {
-    children = options
-    options = {}
-  }
-  return new VMNode(tagName, options, children, this)
+function createVMNode (tagName, options, children) {
+  return new VMNode(tagName, options, children)
 }
 
 /**
@@ -344,23 +369,53 @@ const dependence = {
 
 class XEModel {
   constructor (options) {
-    let { el, data, render } = options
+    let { el, data, created, render } = options
     let _self = dataProxy(objectAssign(this, data()))
-    this.$node = render.call(_self, createVMNode.bind(_self))
-    if (el) {
-      this.mount(el)
+    Object.assign(_self, {
+      $h: createVMNode,
+      $options: options,
+      $active: true
+    })
+    if (created) {
+      created.call(_self)
     }
+    if (!render) {
+      throw new Error('The render not exist!')
+    }
+    this.$node = render.call(_self, createVMNode)
+    if (!el) {
+      throw new Error('The el not exist!')
+    }
+    this.$mount(el)
     return _self
   }
-  mount (selector) {
-    let elem = document.querySelector(selector)
-    let node = this.$node
-    this.$el = elem
-    elem.appendChild(node.$el)
-    node.mount()
+  $mount (selector) {
+    let { $options, $node } = this
+    let { mounted } = $options
+    let container = document.querySelector(selector)
+    let _el = document.createElement($node._tagName)
+    container.appendChild(_el)
+    $node._el = _el
+    $node.mount(this)
+    this.$el = _el
+    if (mounted) {
+      mounted.call(this)
+    }
   }
   $destroy () {
-
+    let { $options } = this
+    let { beforeDestroy, destroy } = $options
+    if (beforeDestroy) {
+      beforeDestroy.call(this)
+    }
+    this.$node.unmount()
+    this.$active = false
+    if (destroy) {
+      destroy.call(this)
+    }
+    Object.keys(this).forEach(key => {
+      delete this[key]
+    })
   }
   $ (model, property) {
     return new ModelBinding(model, property)
