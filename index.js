@@ -367,13 +367,4 @@ class XEModel {
   }
 }
 
-// 深度控制双向和非双向数据流
-// {
-//   visible:true,
-//   style: {},
-//   domProps:{},
-//   props:{},
-//   events: {}
-// }
-
 export default XEModel
