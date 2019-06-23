@@ -6,7 +6,7 @@
         className: 'aa',
         isActive: true,
         display: 'block',
-        show: false,
+        show: true,
         info: {
           name: 'aaaa'
         },

@@ -16,8 +16,8 @@ function isModelBinding (obj) {
   return obj && obj.constructor === ModelBinding
 }
 
-function arrayEach (list, callback) {
-  for (var index = 0, len = list.length; index < len; index++) {
+function arrayEach (list, callback, context, startIndex) {
+  for (var index = startIndex || 0, len = list.length; index < len; index++) {
     callback(list[index], index, list)
   }
 }
@@ -31,7 +31,7 @@ function objectAssign (self) {
     objectEach(obj, (item, key) => {
       self[key] = item
     })
-  })
+  }, null, 1)
   return self
 }
 
@@ -291,12 +291,12 @@ class VMNode {
     if (parentElem) {
       if (!$place) {
         this.$place = $place = document.createComment('')
-        if (!isMount) {
-          parentElem.appendChild($place)
-        }
-      } else if (isMount) {
+      }
+      if (isMount) {
         parentElem.insertBefore($place, $el)
         removeElementChild($el)
+      } else {
+        parentElem.appendChild($place)
       }
     }
   }
