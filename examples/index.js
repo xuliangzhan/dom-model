@@ -13,14 +13,7 @@
         styles: {
           color: 'red'
         },
-        btnList: [
-          {
-            label: '按钮1'
-          },
-          {
-            label: '按钮2'
-          }
-        ],
+        btnList: [],
         list: [
           {
             name: 'test1',
@@ -33,8 +26,17 @@
         ]
       }
     },
+    created: function () {
+      var btnList = []
+      for (var index = 0; index < 50000; index++) {
+        btnList.push({
+          label: '按钮' + index
+        })
+      }
+      this.btnList = btnList
+    },
     render: function (h) {
-      let $ = this.$
+      var $ = this.$
       return h('div', [
         h('div', this.btnList.map(function (item) {
           return h('button', {
@@ -42,8 +44,8 @@
               innerText: item.label
             },
             events: {
-              click (evnt) {
-                debugger
+              click: function (evnt) {
+                alert(item.label)
               }
             }
           })

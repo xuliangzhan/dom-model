@@ -26,7 +26,7 @@ function removeElementChild (elem) {
   elem.parentNode.removeChild(elem)
 }
 
-function objectAssign (origin) {
+const objectAssign = Object.assign || function (origin) {
   arrayEach(arguments, (obj) => {
     objectEach(obj, (item, key) => {
       origin[key] = item
@@ -264,7 +264,7 @@ class VMNode {
       children = options
       options = {}
     } else {
-      options = Object.assign({}, options)
+      options = objectAssign({}, options)
     }
 
     objectAssign(this, {
@@ -299,8 +299,10 @@ class VMNode {
     }
   }
   unmount () {
-    this._children.forEach(vm => vm.unmount())
+    let { _children } = this
+    _children.forEach(vm => vm.unmount())
     vmHandle.destroy(this)
+    _children.length = 0
   }
   toVisible () {
     let { _el, _place, _parent, isMount } = this
@@ -371,7 +373,7 @@ class XEModel {
   constructor (options) {
     let { el, data, created, render } = options
     let _self = dataProxy(objectAssign(this, data()))
-    Object.assign(_self, {
+    objectAssign(_self, {
       $h: createVMNode,
       $options: options,
       $active: true
