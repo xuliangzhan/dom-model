@@ -6,6 +6,7 @@
   * attribute 单向
   * class 单向
   * style 单向
+  * event 单向
 
 ```javascript
 export default {
