@@ -74,9 +74,8 @@ function defineProp (rest, key, obj, get, set) {
 
 const ReflectPolyfill = window.Reflect || {
   set (target, key, value) {
-    let rest = dataProxy(value)
-    target[key] = rest
-    return rest
+    target[key] = value
+    return value
   }
 }
 
@@ -84,6 +83,7 @@ class ModelBinding {
   constructor (obj, property) {
     this.model = obj
     this.property = property
+    this.$depMap = obj.$depMap
   }
   get value () {
     return this.model[this.property]
@@ -95,20 +95,22 @@ const proxyHandles = {
     return target[key]
   },
   set (target, key, value, receiver) {
-    let rest = ReflectPolyfill.set(target, key, dataProxy(value))
+    let rest = ReflectPolyfill.set(target, key, dataProxy(receiver.$depMap, value))
     dependence.update(target, key, value, receiver)
     return rest
   }
 }
 
-function dataProxy (obj) {
+function dataProxy ($depMap, obj) {
   if (isArray(obj)) {
-    let rest = obj.map(item => dataProxy(item))
+    let rest = obj.map(item => dataProxy($depMap, item))
+    rest.$depMap = $depMap
     return new ProxyPolyfill(rest, proxyHandles)
   } else if (isObject(obj)) {
     objectEach(obj, (item, key) => {
-      obj[key] = dataProxy(item)
+      obj[key] = dataProxy($depMap, item)
     })
+    obj.$depMap = $depMap
     return new ProxyPolyfill(obj, proxyHandles)
   }
   return obj
@@ -341,10 +343,9 @@ function createVMNode (tagName, options, children) {
  * 依赖处理器
  */
 const dependence = {
-  map: new Map(),
   listener (binding, callback) {
-    let { model, property } = binding
-    let rests = dependence.map.get(model)
+    let { model, property, $depMap } = binding
+    let rests = $depMap.get(model)
     if (rests) {
       let handles = rests.get(property)
       if (handles) {
@@ -355,11 +356,12 @@ const dependence = {
     } else {
       rests = new Map()
       rests.set(property, [callback])
-      dependence.map.set(model, rests)
+      $depMap.set(model, rests)
     }
   },
   update (target, key, value, receiver) {
-    let rests = dependence.map.get(receiver)
+    let $depMap = receiver.$depMap
+    let rests = $depMap.get(receiver)
     if (rests) {
       let handles = rests.get(key)
       if (handles) {
@@ -372,24 +374,25 @@ const dependence = {
 class XEModel {
   constructor (options) {
     let { el, data, created, render } = options
-    let _self = dataProxy(objectAssign(this, data()))
-    objectAssign(_self, {
+    let depMap = new Map()
+    let model = dataProxy(depMap, objectAssign(this, data()))
+    objectAssign(model, {
       $h: createVMNode,
       $options: options,
       $active: true
     })
     if (created) {
-      created.call(_self)
+      created.call(model)
     }
     if (!render) {
       throw new Error('The render not exist!')
     }
-    this.$node = render.call(_self, createVMNode)
+    this.$node = render.call(model, createVMNode)
     if (!el) {
       throw new Error('The el not exist!')
     }
     this.$mount(el)
-    return _self
+    return model
   }
   $mount (selector) {
     let { $options, $node } = this
@@ -415,6 +418,7 @@ class XEModel {
     if (destroy) {
       destroy.call(this)
     }
+    this.$depMap.clear()
     Object.keys(this).forEach(key => {
       delete this[key]
     })

@@ -41,7 +41,7 @@
         h('div', this.btnList.map(function (item) {
           return h('button', {
             domProps: {
-              innerText: item.label
+              innerText: $(item, 'label')
             },
             events: {
               click: function (evnt) {
