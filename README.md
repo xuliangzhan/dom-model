@@ -18,15 +18,15 @@ export default {
       list: [
         {
           name: 'test1',
-          sex: '男'
+          sex: '1'
         },
         {
           name: 'test2',
-          sex: '女'
+          sex: '0'
         },
         {
           name: 'test3',
-          sex: '男'
+          sex: '1'
         }
       ]
     }
