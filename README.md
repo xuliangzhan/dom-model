@@ -13,7 +13,21 @@ export default {
     return {
       name: '',
       className: 'cls2',
-      isActive: false
+      isActive: false,
+      list: [
+        {
+          name: 'test1',
+          sex: '男'
+        },
+        {
+          name: 'test2',
+          sex: '女'
+        },
+        {
+          name: 'test3',
+          sex: '男'
+        }
+      ]
     }
   }.
   render (h) {
@@ -28,7 +42,10 @@ export default {
           type: 'text',
           value: $(this, 'name')
         }
-      })
+      }),
+      h('ul', this.list.map(item => {
+        return h('li', $(item, 'label'))
+      }))
     ])
   }
 }
