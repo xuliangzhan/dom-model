@@ -5,7 +5,7 @@ const rename = require('gulp-rename')
 const replace = require('gulp-replace')
 const pack = require('./package.json')
 
-const exportModuleName = 'XEModel'
+const exportModuleName = 'DomModel'
 
 gulp.task('build_commonjs', function () {
   return gulp.src('index.js')

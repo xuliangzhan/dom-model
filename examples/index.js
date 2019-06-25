@@ -1,5 +1,5 @@
 (function () {
-  window.a = new XEModel({
+  window.a = new DomModel({
     el: '#app',
     data: function () {
       return {
@@ -28,7 +28,7 @@
     },
     created: function () {
       var btnList = []
-      for (var index = 0; index < 50; index++) {
+      for (var index = 0; index < 5; index++) {
         btnList.push({
           label: '按钮' + index
         })
@@ -51,7 +51,9 @@
           })
         })),
         h('input', {
-          visible: $(this, 'show'),
+          visible: function () {
+            return this.show
+          },
           class: ['hhh', $(this, 'className'), {
             active: $(this, 'isActive')
           }],
@@ -64,7 +66,7 @@
           },
           events: {
             input: function (evnt) {
-              this.name = evnt.target.value
+              this.info.name = evnt.target.value
             }
           }
         }, []),

@@ -1,12 +1,13 @@
-# 实现一个性能仅次于原生的数据驱动 MVVM（用于学习）
+# 一个轻量级的 MVVM 数据驱动（用于学习）
 
-* 简单实现
-  * input 双向
-  * textarea 双向
-  * attribute 单向
-  * class 单向
-  * style 单向
-  * event 单向
+保持与 Vue 的相似的 api 方式
+
+* 简单实现了
+  * appendChild、removeChild
+  * attribute
+  * class
+  * style
+  * event
 
 ```javascript
 export default {

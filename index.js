@@ -12,6 +12,10 @@ function isString (obj) {
   return obj && typeof obj === 'string'
 }
 
+function isFunction (obj) {
+  return obj && typeof obj === 'function'
+}
+
 function isModelBinding (obj) {
   return obj && obj.constructor === ModelBinding
 }
@@ -35,7 +39,7 @@ const objectAssign = Object.assign || function (origin) {
   return origin
 }
 
-function objectEach (obj, callback) {
+function objectEach (obj, callback, context) {
   for (let key in obj) {
     if (obj.hasOwnProperty(key)) {
       callback(obj[key], key, obj)
@@ -80,10 +84,15 @@ const ReflectPolyfill = window.Reflect || {
 }
 
 class ModelBinding {
-  constructor (obj, property) {
-    this.model = obj
+  /**
+   * 数据绑定对象
+   * @param {Proxy} proxy 代理对象
+   * @param {String} property 代理属性
+   */
+  constructor (proxy, property) {
+    this.model = proxy
     this.property = property
-    this.$depMap = obj.$depMap
+    this.$depMap = proxy.$depMap
   }
   get value () {
     return this.model[this.property]
@@ -91,41 +100,54 @@ class ModelBinding {
 }
 
 const proxyHandles = {
-  get (target, key, receiver) {
-    return target[key]
+  /**
+   * 初始化代理数据
+   * @param {Map} $depMap 当前实例的依赖对象集合
+   * @param {Any} obj 代理对象
+   */
+  proxy ($depMap, obj) {
+    if (isObject(obj) && !Object.isFrozen(obj)) {
+      if (isArray(obj)) {
+        let rest = obj.map(item => proxyHandles.proxy($depMap, item))
+        rest.$depMap = $depMap
+        return new ProxyPolyfill(rest, proxyHandles.options)
+      } else if (isObject(obj)) {
+        objectEach(obj, (item, key) => {
+          obj[key] = proxyHandles.proxy($depMap, item)
+        })
+        obj.$depMap = $depMap
+        return new ProxyPolyfill(obj, proxyHandles.options)
+      }
+    }
+    return obj
   },
-  set (target, key, value, receiver) {
-    let rest = ReflectPolyfill.set(target, key, dataProxy(receiver.$depMap, value))
-    dependence.update(target, key, value, receiver)
-    return rest
+  /**
+   * 代理的处理参数
+   */
+  options: {
+    get (target, key, receiver) {
+      DepHandle.collect(key, receiver)
+      return target[key]
+    },
+    set (target, key, value, receiver) {
+      let rest = ReflectPolyfill.set(target, key, proxyHandles.proxy(receiver.$depMap, value))
+      DepHandle.collect(key, receiver)
+      DepHandle.update(target, key, value, receiver)
+      return rest
+    }
   }
-}
-
-function dataProxy ($depMap, obj) {
-  if (isArray(obj)) {
-    let rest = obj.map(item => dataProxy($depMap, item))
-    rest.$depMap = $depMap
-    return new ProxyPolyfill(rest, proxyHandles)
-  } else if (isObject(obj)) {
-    objectEach(obj, (item, key) => {
-      obj[key] = dataProxy($depMap, item)
-    })
-    obj.$depMap = $depMap
-    return new ProxyPolyfill(obj, proxyHandles)
-  }
-  return obj
 }
 
 function watchClassName (className, callback) {
   if (className) {
     if (isModelBinding(className)) {
-      dependence.listener(className, callback)
+      DepHandle.listener(className, callback)
     } else if (isArray(className)) {
       className.map(cls => watchClassName(cls, callback))
     } else {
       objectEach(className, val => {
         if (isModelBinding(val)) {
-          dependence.listener(val, callback)
+          DepHandle.listener(val, callback)
         }
       })
     }
@@ -158,12 +180,12 @@ function parseClassName (className) {
 
 function watchStyle (style, callback) {
   if (style) {
-    if (style.constructor === ModelBinding) {
-      dependence.listener(style, callback)
+    if (isModelBinding(style)) {
+      DepHandle.listener(style, callback)
     } else {
       objectEach(style, val => {
-        if (val.constructor === ModelBinding) {
-          dependence.listener(val, callback)
+        if (isModelBinding(val)) {
+          DepHandle.listener(val, callback)
         }
       })
     }
@@ -173,11 +195,11 @@ function watchStyle (style, callback) {
 function parseStyle (style) {
   let rest = {}
   if (style) {
-    if (style.constructor === ModelBinding) {
+    if (isModelBinding(style)) {
       objectAssign(rest, parseStyle(style.value))
     } else {
       objectEach(style, (rule, key) => {
-        if (rule.constructor === ModelBinding) {
+        if (isModelBinding(rule)) {
           rest[key] = rule.value
         } else {
           rest[key] = rule
@@ -188,21 +210,31 @@ function parseStyle (style) {
   return rest
 }
 
-const vmHandle = {
+const nodeHandle = {
+  /**
+   * 初始化虚拟节点
+   * @param {VMNode} vm 虚拟节点对象
+   */
   init (vm) {
-    let { _el, _options, _tagName } = vm
+    let { _el, _options, _tagName, _context } = vm
     if (!_el) {
       vm._el = _el = document.createElement(_tagName)
     }
-    if (isModelBinding(_options.visible)) {
-      let callback = () => {
-        if (vm.visible) {
-          vm.toVisible()
-        } else {
-          vm.toHidden()
-        }
+    let visible = _options.visible
+    let callback = () => {
+      if (vm.isVisible) {
+        vm.toVisible()
+      } else {
+        vm.toHidden()
       }
-      dependence.listener(_options.visible, callback)
+    }
+    if (isFunction(visible)) {
+      DepHandle.analyze(() => {
+        visible = visible.call(_context)
+      }, callback)
+    }
+    if (isModelBinding(visible)) {
+      DepHandle.listener(visible, callback)
     }
 
     let className = _options.class
@@ -211,7 +243,7 @@ const vmHandle = {
         _el.className = parseClassName(className).filter(cls => cls).join(' ')
       }
       if (isModelBinding(className)) {
-        dependence.listener(className, callback)
+        DepHandle.listener(className, callback)
       }
       callback()
       watchClassName(className, callback)
@@ -223,18 +255,19 @@ const vmHandle = {
         objectAssign(_el.style, parseStyle(style))
       }
       if (isModelBinding(style)) {
-        dependence.listener(style, callback)
+        DepHandle.listener(style, callback)
       }
       callback()
       watchStyle(style, callback)
     }
 
     objectEach(_options.domProps, (property, domKey) => {
+      let callback = () => {
+        _el[domKey] = property.value
+      }
       if (property) {
         if (isModelBinding(property)) {
-          dependence.listener(property, () => {
-            _el[domKey] = property.value
-          })
+          DepHandle.listener(property, callback)
           _el[domKey] = property.value
         } else {
           _el[domKey] = property
@@ -243,10 +276,14 @@ const vmHandle = {
     })
 
     objectEach(_options.events, function (callback, name, obj) {
-      obj[name] = () => callback.apply(vm._context, arguments)
+      obj[name] = evnt => callback.call(vm._context, evnt)
       _el.addEventListener(name, obj[name], false)
     })
   },
+  /**
+   * 销毁虚拟节点
+   * @param {VMNode} vm 虚拟节点对象
+   */
   destroy (vm) {
     let { _el, _place, _options } = vm
     objectEach(_options.events, (callback, name) => {
@@ -261,6 +298,12 @@ const vmHandle = {
 }
 
 class VMNode {
+  /**
+   * 虚拟节点对象
+   * @param {String} tagName 节点名
+   * @param {Object} options 节点参数
+   * @param {Array} children 子节点
+   */
   constructor (tagName, options, children = []) {
     if (isArray(options)) {
       children = options
@@ -268,44 +311,66 @@ class VMNode {
     } else {
       options = objectAssign({}, options)
     }
-
     objectAssign(this, {
       _el: null,
+      _parent: null,
       _tagName: tagName,
       _options: options,
       _children: children,
       _place: null,
       _context: null
     })
-
     arrayEach(children, vm => {
       vm._parent = this
     })
   }
-  get visible () {
-    let { visible } = this._options
-    return visible || isBoolean(visible) ? isModelBinding(visible) ? visible.value : visible : true
+  /**
+   * 判断节点是否需要显示
+   */
+  get isVisible () {
+    let { _context, _options } = this
+    let { visible } = _options
+    if (isFunction(visible)) {
+      visible = visible.call(_context)
+    }
+    if (visible || isBoolean(visible)) {
+      return isModelBinding(visible) ? visible.value : visible
+    }
+    return true
   }
+  /**
+   * 判断是否已经挂载在父节点
+   */
   get isMount () {
     return this._el && this._el.parentNode
   }
+  /**
+   * 挂载节点
+   * @param {DomModel} context 当前上下文实例对象
+   */
   mount (context) {
-    let { visible, _children } = this
     this._context = context
-    if (visible) {
-      vmHandle.init(this)
+    let { isVisible, _children } = this
+    if (isVisible) {
+      nodeHandle.init(this)
       this.toVisible()
       arrayEach(_children, node => node.mount(context))
     } else {
       this.toHidden()
     }
   }
+  /**
+   * 卸载节点
+   */
   unmount () {
     let { _children } = this
     _children.forEach(vm => vm.unmount())
-    vmHandle.destroy(this)
+    nodeHandle.destroy(this)
     _children.length = 0
   }
+  /**
+   * 显示节点，挂载在父节点中
+   */
   toVisible () {
     let { _el, _place, _parent, isMount } = this
     let parentElem = _parent ? _parent._el : null
@@ -318,6 +383,9 @@ class VMNode {
       }
     }
   }
+  /**
+   * 隐藏节点，从父节点中移除
+   */
   toHidden () {
     let { _el, _place, _parent, isMount } = this
     let parentElem = _parent ? _parent._el : null
@@ -339,93 +407,148 @@ function createVMNode (tagName, options, children) {
   return new VMNode(tagName, options, children)
 }
 
-/**
- * 依赖处理器
- */
-const dependence = {
-  listener (binding, callback) {
-    let { model, property, $depMap } = binding
-    let rests = $depMap.get(model)
-    if (rests) {
-      let handles = rests.get(property)
-      if (handles) {
-        handles.push(callback)
-      } else {
-        rests.set(property, [callback])
-      }
-    } else {
-      rests = new Map()
-      rests.set(property, [callback])
-      $depMap.set(model, rests)
+const DepHandle = {
+  gather: false,
+  depMap: new Map(),
+  /**
+   * 依赖分析
+   * @param {Function} callback 待分析的运行函数
+   * @param {Function} handle 依赖处理函数
+   */
+  analyze (callback, handle) {
+    let { depMap } = DepHandle
+    DepHandle.gather = true
+    depMap.clear()
+    callback()
+    depMap.forEach((binding, key) => DepHandle.listener(new ModelBinding(binding, key), handle))
+    DepHandle.gather = false
+  },
+  /**
+   * 依赖收集
+   * @param {String} key 依赖属性
+   * @param {Proxy} receiver 代理对象
+   */
+  collect (key, receiver) {
+    let { gather, depMap } = DepHandle
+    if (gather) {
+      depMap.set(key, receiver)
     }
   },
+  /**
+   * 依赖监听
+   * @param {ModelBinding} binding 数据绑定对象
+   * @param {Function} callback 触发回调
+   */
+  listener (binding, callback) {
+    let { model, property, $depMap } = binding
+    if ($depMap) {
+      let rests = $depMap.get(model)
+      if (rests) {
+        let handles = rests.get(property)
+        if (handles) {
+          handles.push(callback)
+        } else {
+          rests.set(property, [callback])
+        }
+      } else {
+        rests = new Map()
+        rests.set(property, [callback])
+        $depMap.set(model, rests)
+      }
+    }
+  },
+  /**
+   * 更新视图
+   * @param {Any} target 数据源
+   * @param {String} key 代理属性
+   * @param {Any} value 代理值
+   * @param {Proxy} receiver 代理对象
+   */
   update (target, key, value, receiver) {
     let $depMap = receiver.$depMap
-    let rests = $depMap.get(receiver)
-    if (rests) {
-      let handles = rests.get(key)
-      if (handles) {
-        arrayEach(handles, handle => handle())
+    if ($depMap) {
+      let rests = $depMap.get(receiver)
+      if (rests) {
+        let handles = rests.get(key)
+        if (handles) {
+          arrayEach(handles, handle => handle())
+        }
       }
     }
   }
 }
 
-class XEModel {
+class DomModel {
+  /**
+   * 数据驱动对象
+   * @param {Object} options 参数
+   */
   constructor (options) {
     let { el, data, created, render } = options
     let depMap = new Map()
-    let model = dataProxy(depMap, objectAssign(this, data()))
-    objectAssign(model, {
+    let $proxy = proxyHandles.proxy(depMap, objectAssign(this, data()))
+    objectAssign(this, {
       $h: createVMNode,
       $options: options,
       $active: true
     })
     if (created) {
-      created.call(model)
+      created.call($proxy)
     }
     if (!render) {
       throw new Error('The render not exist!')
     }
-    this.$node = render.call(model, createVMNode)
-    if (!el) {
-      throw new Error('The el not exist!')
+    this.$proxy = $proxy
+    this.$node = render.call($proxy, createVMNode)
+    if (el) {
+      $proxy.$mount(el)
     }
-    this.$mount(el)
-    return model
+    return $proxy
   }
+  /**
+   * 挂载实例
+   * @param {String} selector 选择器
+   */
   $mount (selector) {
-    let { $options, $node } = this
+    let { $proxy, $options, $node } = this
     let { mounted } = $options
     let container = document.querySelector(selector)
     let _el = document.createElement($node._tagName)
     container.appendChild(_el)
     $node._el = _el
-    $node.mount(this)
+    $node.mount($proxy)
     this.$el = _el
     if (mounted) {
-      mounted.call(this)
+      mounted.call($proxy)
     }
   }
+  /**
+   * 销毁实例
+   */
   $destroy () {
-    let { $options } = this
+    let { $proxy, $options, $node, $depMap } = this
     let { beforeDestroy, destroy } = $options
     if (beforeDestroy) {
-      beforeDestroy.call(this)
+      beforeDestroy.call($proxy)
     }
-    this.$node.unmount()
+    $node.unmount()
     this.$active = false
     if (destroy) {
-      destroy.call(this)
+      destroy.call($proxy)
     }
-    this.$depMap.clear()
-    Object.keys(this).forEach(key => {
-      delete this[key]
+    $depMap.clear()
+    Object.keys($proxy).forEach(key => {
+      delete $proxy[key]
     })
   }
-  $ (model, property) {
-    return new ModelBinding(model, property)
+  /**
+   * 创建数据绑定对象
+   * @param {Proxy} $proxy 代理对象
+   * @param {String} property 代理属性
+   */
+  $ ($proxy, property) {
+    return new ModelBinding($proxy, property)
   }
 }
 
-export default XEModel
+export default DomModel

@@ -1,8 +1,7 @@
 {
-  "name": "xe-model",
+  "name": "dom-model",
   "version": "0.0.1",
-  "description": "",
-  "private": true,
+  "description": "A lightweight document element MVVM data driver.",
   "scripts": {
     "lib": "gulp build"
   },
@@ -51,10 +50,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xuliangzhan/xe-dom.git"
+    "url": "git+https://github.com/xuliangzhan/dom-model.git"
   },
   "keywords": [
-    "xe-utils"
+    "dom-model",
+    "mvvm",
+    "document model",
+    "data proxy"
   ],
   "author": {
     "name": "Xu Liangzhan",
@@ -62,7 +64,7 @@
   },
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/xuliangzhan/xe-dom/issues"
+    "url": "https://github.com/xuliangzhan/dom-model/issues"
   },
-  "homepage": "https://github.com/xuliangzhan/xe-dom#readme"
+  "homepage": "https://github.com/xuliangzhan/dom-model#readme"
 }
