@@ -1,4 +1,5 @@
 (function () {
+  var s = Date.now()
   window.a = new DomModel({
     el: '#app',
     data: function () {
@@ -23,20 +24,55 @@
             name: 'test2',
             num: 2
           }
+        ],
+        tableData: [],
+        tableColumn: [
+          {
+            prop: 'name',
+            label: 'Name'
+          },
+          {
+            prop: 'sex',
+            label: 'Sex'
+          },
+          {
+            prop: 'role',
+            label: 'Role'
+          },
+          {
+            prop: 'sex',
+            label: 'Sex'
+          },
+          {
+            prop: 'name',
+            label: 'Name'
+          }
         ]
       }
     },
     created: function () {
       var btnList = []
-      for (var index = 0; index < 5; index++) {
-        btnList.push({
-          label: '按钮' + index
+      var tableData = []
+      for (var index = 0; index < 100; index++) {
+        if (index < 5) {
+          btnList.push({
+            label: '按钮' + index
+          })
+        }
+        tableData.push({
+          name: 'test' + index,
+          role: '前端',
+          sex: '男',
+          edit: false
         })
       }
       this.btnList = btnList
+      this.tableData = tableData
     },
     render: function (h) {
       var $ = this.$
+      var tableData = this.tableData
+      var tableColumn = this.tableColumn
       return h('div', [
         h('div', this.btnList.map(function (item) {
           return h('button', {
@@ -82,8 +118,41 @@
               }
             }
           }, [])
-        }))
+        })),
+        h('table', [
+          h('thead', [
+            h('tr', tableColumn.map(function (column) {
+              return h('th', column.label)
+            }))
+          ]),
+          h('tbody', tableData.map(function (row) {
+            return h('tr', tableColumn.map(function (column) {
+              return h('td', {
+                events: {
+                  click: function (evnt) {
+                    row.edit = true
+                  }
+                }
+              }, [
+                h('span', {
+                  visible: function () {
+                    return !row.edit
+                  }
+                }, $(row, column.prop)),
+                h('input', {
+                  visible: function () {
+                    return row.edit
+                  },
+                  domProps: {
+                    type: 'text'
+                  }
+                })
+              ])
+            }))
+          }))
+        ])
       ])
     }
   })
+  console.log(Date.now() - s)
 })()

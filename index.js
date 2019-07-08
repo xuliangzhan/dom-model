@@ -20,6 +20,10 @@ function isModelBinding (obj) {
   return obj && obj.constructor === ModelBinding
 }
 
+function isProxy (obj) {
+  return obj && obj.$depMap
+}
+
 function arrayEach (list, callback, context, startIndex) {
   for (var index = startIndex || 0, len = list.length; index < len; index++) {
     callback(list[index], index, list)
@@ -66,14 +70,24 @@ const ProxyPolyfill = window.Proxy || function (obj, options) {
   return obj
 }
 
+function hasBindingProp (key) {
+  if (key && key.charAt) {
+    let prefix = key.charAt(0)
+    return !(prefix === '$' || prefix === '_')
+  }
+  return 1
+}
+
 function defineProp (rest, key, obj, get, set) {
-  Object.defineProperty(obj, key, {
-    get: () => get(rest, key, obj),
-    set: value => set(rest, key, value, obj),
-    writeable: true,
-    configurable: true,
-    enumerable: true
-  })
+  if (hasBindingProp(key)) {
+    Object.defineProperty(obj, key, {
+      get: () => get(rest, key, obj),
+      set: value => set(rest, key, value, obj),
+      writeable: true,
+      configurable: true,
+      enumerable: true
+    })
+  }
 }
 
 const ReflectPolyfill = window.Reflect || {
@@ -106,14 +120,16 @@ const proxyHandles = {
    * @param {Any} obj 代理对象
    */
   proxy ($depMap, obj) {
-    if (isObject(obj) && !Object.isFrozen(obj)) {
+    if (obj && !isProxy(obj) && isObject(obj) && !Object.isFrozen(obj)) {
       if (isArray(obj)) {
         let rest = obj.map(item => proxyHandles.proxy($depMap, item))
         rest.$depMap = $depMap
-        return new ProxyPolyfill(rest, proxyHandles.options)
+        return rest
       } else if (isObject(obj)) {
         objectEach(obj, (item, key) => {
-          obj[key] = proxyHandles.proxy($depMap, item)
+          if (hasBindingProp(key)) {
+            obj[key] = proxyHandles.proxy($depMap, item)
+          }
         })
         obj.$depMap = $depMap
         return new ProxyPolyfill(obj, proxyHandles.options)
@@ -217,68 +233,82 @@ const nodeHandle = {
    */
   init (vm) {
     let { _el, _options, _tagName, _context } = vm
-    if (!_el) {
-      vm._el = _el = document.createElement(_tagName)
-    }
-    let visible = _options.visible
-    let callback = () => {
-      if (vm.isVisible) {
-        vm.toVisible()
+    if (_tagName === '#text') {
+      let data = _options
+      let callback = () => {
+        _el.data = data.value
+      }
+      if (isModelBinding(data)) {
+        DepHandle.listener(data, callback)
+        _el = document.createTextNode(data.value)
       } else {
-        vm.toHidden()
+        _el = document.createTextNode(data)
       }
-    }
-    if (isFunction(visible)) {
-      DepHandle.analyze(() => {
-        visible = visible.call(_context)
-      }, callback)
-    }
-    if (isModelBinding(visible)) {
-      DepHandle.listener(visible, callback)
-    }
-
-    let className = _options.class
-    if (className) {
+      vm._el = _el
+    } else {
+      if (!_el) {
+        vm._el = _el = document.createElement(_tagName)
+      }
+      let visible = _options.visible
       let callback = () => {
-        _el.className = parseClassName(className).filter(cls => cls).join(' ')
-      }
-      if (isModelBinding(className)) {
-        DepHandle.listener(className, callback)
-      }
-      callback()
-      watchClassName(className, callback)
-    }
-
-    let style = _options.style
-    if (style) {
-      let callback = () => {
-        objectAssign(_el.style, parseStyle(style))
-      }
-      if (isModelBinding(style)) {
-        DepHandle.listener(style, callback)
-      }
-      callback()
-      watchStyle(style, callback)
-    }
-
-    objectEach(_options.domProps, (property, domKey) => {
-      let callback = () => {
-        _el[domKey] = property.value
-      }
-      if (property) {
-        if (isModelBinding(property)) {
-          DepHandle.listener(property, callback)
-          _el[domKey] = property.value
+        if (vm.isVisible) {
+          vm.toVisible()
         } else {
-          _el[domKey] = property
+          vm.toHidden()
         }
       }
-    })
+      if (isFunction(visible)) {
+        DepHandle.analyze(() => {
+          visible = visible.call(_context)
+        }, callback)
+      }
+      if (isModelBinding(visible)) {
+        DepHandle.listener(visible, callback)
+      }
 
-    objectEach(_options.events, function (callback, name, obj) {
-      obj[name] = evnt => callback.call(vm._context, evnt)
-      _el.addEventListener(name, obj[name], false)
-    })
+      let className = _options.class
+      if (className) {
+        let callback = () => {
+          _el.className = parseClassName(className).filter(cls => cls).join(' ')
+        }
+        if (isModelBinding(className)) {
+          DepHandle.listener(className, callback)
+        }
+        callback()
+        watchClassName(className, callback)
+      }
+
+      let style = _options.style
+      if (style) {
+        let callback = () => {
+          objectAssign(_el.style, parseStyle(style))
+        }
+        if (isModelBinding(style)) {
+          DepHandle.listener(style, callback)
+        }
+        callback()
+        watchStyle(style, callback)
+      }
+
+      objectEach(_options.domProps, (property, domKey) => {
+        let callback = () => {
+          _el[domKey] = property.value
+        }
+        if (property) {
+          if (isModelBinding(property)) {
+            DepHandle.listener(property, callback)
+            _el[domKey] = property.value
+          } else {
+            _el[domKey] = property
+          }
+        }
+      })
+
+      objectEach(_options.events, function (callback, name, obj) {
+        obj[name] = evnt => callback.call(vm._context, evnt)
+        _el.addEventListener(name, obj[name], false)
+      })
+    }
   },
   /**
    * 销毁虚拟节点
@@ -304,12 +334,30 @@ class VMNode {
    * @param {Object} options 节点参数
    * @param {Array} children 子节点
    */
-  constructor (tagName, options, children = []) {
-    if (isArray(options)) {
-      children = options
-      options = {}
-    } else {
-      options = objectAssign({}, options)
+  constructor (tagName, options, children) {
+    if (options) {
+      let isArr = isArray(options)
+      let isText = tagName === '#text'
+      let isBinding = isModelBinding(options)
+      if (!isArr && !isBinding && isObject(options)) {
+        options = objectAssign({}, options)
+      } else if (!isText) {
+        if (isArr) {
+          children = options
+        } else if (options) {
+          children = [
+            new VMNode('#text', options)
+          ]
+        }
+        options = {}
+      }
+    }
+    if (!children) {
+      children = []
+    } else if (isModelBinding(children)) {
+      children = [
+        new VMNode('#text', children)
+      ]
     }
     objectAssign(this, {
       _el: null,
@@ -351,8 +399,8 @@ class VMNode {
   mount (context) {
     this._context = context
     let { isVisible, _children } = this
+    nodeHandle.init(this)
     if (isVisible) {
-      nodeHandle.init(this)
       this.toVisible()
       arrayEach(_children, node => node.mount(context))
     } else {
